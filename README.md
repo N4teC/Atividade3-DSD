@@ -86,6 +86,10 @@ No segundo terminal, inicie o cliente (Ruby ou Python). Ele será o **Jogador 0 
 
 ```bash
 ruby client.rb
+
+# ou
+
+python client.py
 ```
 
 Ele se conectará e exibirá uma mensagem de "Aguardando o segundo jogador...".
