@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package tictactoe;
+
+// serviço principal do jogo
+service TicTacToe {
+  // Um stream bidirecional para o jogo.
+  // O cliente envia eventos de jogada e o servidor envia atualizações do estado do jogo.
+  rpc GameStream(stream GameRequest) returns (stream GameStateResponse);
+}
+
+// Mensagem enviada do cliente para o servidor
+message GameRequest {
+  int32 player_id = 1; // 0 ou 1
+  int32 position = 2;  // Posição da jogada (0-8)
+}
+
+// Mensagem enviada do servidor para o cliente com o estado atual do jogo
+message GameStateResponse {
+  string board = 1;         // O tabuleiro formatado como string
+  string message = 2;       // Mensagens para o jogador (ex: "Sua vez", "Aguardando oponente")
+  bool your_turn = 3;       // True se for a vez deste jogador
+  bool game_over = 4;       // True se o jogo terminou
+  string winner = 5;        // Símbolo do vencedor ('X' ou 'O') ou "Empate"
+}
