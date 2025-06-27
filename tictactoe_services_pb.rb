@@ -2,7 +2,7 @@
 # Source: tictactoe.proto for package 'tictactoe'
 
 require 'grpc'
-require 'tictactoe_pb'
+require_relative 'tictactoe_pb'
 
 module Tictactoe
   module TicTacToe

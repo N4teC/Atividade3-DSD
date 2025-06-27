@@ -10,13 +10,13 @@ def main
   requests = Enumerator.new do |yielder|
     # O primeiro envio é para se registrar. A posição -1 pode ser ignorada pelo servidor.
     puts "Conectando ao jogo..."
-    yielder.yield Tictactoe::GameRequest.new(position: -1)
+    yielder.yield Tictactoe::GameRequest.new(player_id: -1, position: -1)
 
     loop do
       # Lê a entrada do usuário de forma não bloqueante
       move = $stdin.gets.chomp
       if move =~ /^\d+$/
-        yielder.yield Tictactoe::GameRequest.new(position: move.to_i)
+        yielder.yield Tictactoe::GameRequest.new(player_id: -1, position: move.to_i)
       end
     end
   end

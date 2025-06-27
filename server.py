@@ -2,6 +2,7 @@ import grpc
 from concurrent import futures
 import time
 import threading
+import queue
 
 # Importar classes geradas
 import tictactoe_pb2
@@ -53,15 +54,16 @@ class GameLogic:
 class TicTacToeServicer(tictactoe_pb2_grpc.TicTacToeServicer):
     def __init__(self):
         self.game = GameLogic()
-        self.player_streams = [None, None]
+        self.player_queues = [queue.Queue(), queue.Queue()]
+        self.player_connected = [False, False]
         self.lock = threading.Lock()
 
-    def broadcast(self):
-        """Envia o estado atual do jogo para ambos os jogadores."""
-        for i, context in enumerate(self.player_streams):
-            if context:
+    def broadcast_state(self):
+        """Envia o estado atual do jogo para ambos os jogadores via suas queues."""
+        for i in range(2):
+            if self.player_connected[i]:
                 is_turn = not self.game.game_over and self.game.turn % 2 == i
-                message = "Sua vez de jogar." if is_turn else "Aguarde a vez do oponente."
+                message = "Sua vez, digite a posição (0-8):" if is_turn else "Aguardando a jogada do oponente..."
                 if self.game.game_over:
                     if self.game.winner == "Empate":
                         message = "O jogo terminou em empate!"
@@ -77,71 +79,89 @@ class TicTacToeServicer(tictactoe_pb2_grpc.TicTacToeServicer):
                     game_over=self.game.game_over,
                     winner=self.game.winner or ""
                 )
-                yield (i, state)
-    
+                try:
+                    self.player_queues[i].put_nowait(state)
+                except queue.Full:
+                    pass  # Se a queue estiver cheia, ignora
+
     def GameStream(self, request_iterator, context):
         player_id = -1
         with self.lock:
-            if self.player_streams[0] is None:
+            if not self.player_connected[0]:
                 player_id = 0
-                self.player_streams[0] = context
+                self.player_connected[0] = True
                 print("Jogador 0 (X) conectado.")
-            elif self.player_streams[1] is None:
+            elif not self.player_connected[1]:
                 player_id = 1
-                self.player_streams[1] = context
+                self.player_connected[1] = True
                 print("Jogador 1 (O) conectado. O jogo vai começar!")
             else:
                 context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Servidor cheio.")
                 return
 
-        # Segura o jogador 1 até o 2 conectar
-        while self.player_streams[1] is None:
-            yield tictactoe_pb2.GameStateResponse(message="Aguardando o segundo jogador...")
-            time.sleep(1)
-
-        # Loop principal do jogo para este jogador
         try:
-            # Envia estado inicial
-            initial_states = list(self.broadcast())
-            for pid, state in initial_states:
-                if pid == player_id:
-                    yield state
-            
-            for request in request_iterator:
-                if request.player_id == self.game.turn % 2:
-                    if self.game.make_move(request.position, request.player_id):
-                        print(f"Jogador {request.player_id} jogou na posição {request.position}")
-                        # Após uma jogada válida, o broadcast envia o estado para ambos
-                        # e o yield abaixo garante que o gerador continue
-                    else:
-                        # Informa sobre jogada inválida apenas para o jogador que tentou
-                        yield tictactoe_pb2.GameStateResponse(board=self.game.get_board_string(), message="Jogada inválida. Tente novamente.", your_turn=True)
+            # Se é o jogador 0, aguarda o jogador 1
+            if player_id == 0:
+                while not self.player_connected[1]:
+                    yield tictactoe_pb2.GameStateResponse(message="Aguardando o segundo jogador...")
+                    time.sleep(1)
 
-                # Este yield é o que efetivamente envia as atualizações para os clientes
-                # A lógica de broadcast precisa ser chamada fora deste loop para atualizar ambos os jogadores
-                # Uma implementação mais robusta usaria queues para desacoplar
-                # Por simplicidade, vamos re-transmitir o estado a cada interação
-                states_after_move = list(self.broadcast())
-                for pid, state in states_after_move:
-                     # Este é um hack. Em um sistema real, você usaria um padrão pub/sub.
-                     # O gRPC não permite escrever no stream de outro a partir de um servicer diferente.
-                     # A solução é ter um thread de broadcast separado.
-                     # Por simplicidade, vamos retornar o estado apenas para o jogador atual.
-                     # O outro jogador saberá do estado na sua próxima interação (ou no próximo poll).
-                     if pid == player_id:
-                         yield state
-                
-                if self.game.game_over:
-                    break
+            # Envia estado inicial
+            self.broadcast_state()
+            
+            # Thread para processar entrada do jogador
+            def process_moves():
+                try:
+                    for request in request_iterator:
+                        # Ignora mensagem inicial de registro (position -1)
+                        if request.position == -1:
+                            continue
+                            
+                        # Verifica se é a vez do jogador correto
+                        actual_player_id = player_id if request.player_id == -1 else request.player_id
+                        
+                        if actual_player_id == self.game.turn % 2:
+                            if self.game.make_move(request.position, actual_player_id):
+                                print(f"Jogador {actual_player_id} jogou na posição {request.position}")
+                                # Notifica ambos os jogadores sobre a jogada
+                                self.broadcast_state()
+                            else:
+                                # Jogada inválida - envia mensagem apenas para este jogador
+                                invalid_state = tictactoe_pb2.GameStateResponse(
+                                    board=self.game.get_board_string(), 
+                                    message="Jogada inválida. Tente novamente.", 
+                                    your_turn=True,
+                                    game_over=self.game.game_over,
+                                    winner=self.game.winner or ""
+                                )
+                                try:
+                                    self.player_queues[player_id].put_nowait(invalid_state)
+                                except queue.Full:
+                                    pass
+                except:
+                    pass
+
+            # Inicia thread para processar movimentos
+            move_thread = threading.Thread(target=process_moves, daemon=True)
+            move_thread.start()
+            
+            # Loop principal - envia estados da queue
+            while not self.game.game_over:
+                try:
+                    # Aguarda por atualizações na queue deste jogador
+                    state = self.player_queues[player_id].get(timeout=2.0)
+                    yield state
+                    
+                except queue.Empty:
+                    # Timeout - envia heartbeat para manter conexão
+                    continue
 
         except grpc.RpcError:
             print(f"Jogador {player_id} desconectado.")
         finally:
             with self.lock:
-                self.player_streams[player_id] = None
+                self.player_connected[player_id] = False
                 print(f"Limpando conexão do jogador {player_id}.")
-                # Opcional: reiniciar o jogo se um jogador sair
-                # self.game = GameLogic() 
 
 
 def serve():
