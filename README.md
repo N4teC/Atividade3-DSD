@@ -37,16 +37,26 @@ Antes de começar, garanta que você tenha os seguintes softwares instalados:
 
 ## Instalação e Configuração
 
-Siga os passos abaixo para configurar o ambiente e instalar as dependências.
+### Opção 1: Configuração Automática (Recomendada)
 
-### 1. Instale as Dependências (Python e Ruby)
+Se você estiver usando GitHub Codespaces ou Dev Containers, as dependências serão instaladas automaticamente quando o ambiente for criado.
+
+Alternativamente, você pode executar o script de setup:
+
+```bash
+./setup.sh
+```
+
+### Opção 2: Instalação Manual
+
+Se preferir instalar manualmente ou se a configuração automática não funcionar:
 
 ```bash
 # Instalar dependências do Python
-pip install grpcio grpcio-tools
+pip install -r requirements.txt
 
 # Instalar dependências do Ruby
-gem install grpc grpc-tools
+bundle install
 ```
 
 ### 2. Compile o Arquivo .proto
