@@ -1,21 +1,37 @@
 {
-    "name": "Jogo da Velha gRPC",
-    "image": "mcr.microsoft.com/devcontainers/universal:2-linux",
+    "name": "Atividade3-DSD Development Environment",
+    "image": "mcr.microsoft.com/devcontainers/python:3.11",
     "features": {
-        "ghcr.io/devcontainers/features/python:1": {
-            "version": "3.11"
-        },
         "ghcr.io/devcontainers/features/ruby:1": {
-            "version": "3.1"
+            "version": "3.2"
+        },
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true,
+            "installOhMyZsh": true
         }
     },
-    "postCreateCommand": "pip install -r requirements.txt && bundle install",
+    "postCreateCommand": "bash .devcontainer/setup.sh",
     "customizations": {
         "vscode": {
             "extensions": [
                 "ms-python.python",
-                "rebornix.ruby"
+                "rebornix.ruby",
+                "ms-python.pylint",
+                "ms-python.flake8"
             ]
+        }
+    },
+    "forwardPorts": [
+        50051,
+        8080
+    ],
+    "portsAttributes": {
+        "50051": {
+            "label": "gRPC Server"
+        },
+        "8080": {
+            "label": "Web Interface"
         }
     }
 }
